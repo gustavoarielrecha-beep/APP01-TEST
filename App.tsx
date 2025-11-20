@@ -123,10 +123,10 @@ const App: React.FC = () => {
 
     // Simulate a connection attempt
     setTimeout(() => {
-      // En un entorno frontend real, no podemos conectar directamente a Postgres por TCP.
-      setDbStatus('error');
-      setDbError(`OperationalError: connection to server at "${DB_CONFIG.hostname}", port ${DB_CONFIG.port} failed: Connection timed out.\n\nDetail: Direct TCP connections to PostgreSQL are not supported from browser environments due to security sandboxing.`);
-    }, 2500);
+      // SOLUCIÓN: Para fines de demostración en Frontend, simulamos una conexión exitosa.
+      // NOTA TÉCNICA: En producción, esto requeriría un Backend (API Node/Python) intermediario.
+      setDbStatus('connected');
+    }, 1500);
   };
 
   // Auto scroll
@@ -246,7 +246,7 @@ const App: React.FC = () => {
                 className="text-xs text-blue-400 hover:text-blue-300 hover:underline disabled:opacity-50"
                 disabled={dbStatus === 'connecting'}
               >
-                Reintentar
+                Reconectar
               </button>
             </div>
             
@@ -254,9 +254,15 @@ const App: React.FC = () => {
               <div className={`flex items-center gap-3 p-3 rounded-lg border ${dbStatus === 'error' ? 'bg-red-900/10 border-red-900/30' : 'bg-slate-800 border-slate-700'}`}>
                 <div className={`w-2.5 h-2.5 rounded-full ${getDbStatusColor()}`}></div>
                 <span className={`text-sm font-medium ${dbStatus === 'error' ? 'text-red-400' : 'text-white'}`}>
-                  {dbStatus === 'connecting' ? 'Conectando...' : dbStatus === 'connected' ? 'Online' : 'Error de Conexión'}
+                  {dbStatus === 'connecting' ? 'Conectando...' : dbStatus === 'connected' ? 'Online (Simulado)' : 'Error de Conexión'}
                 </span>
               </div>
+              
+              {dbStatus === 'connected' && (
+                 <div className="px-2 py-1 bg-amber-900/30 border border-amber-900/50 rounded text-[10px] text-amber-400 text-center">
+                    ⓘ Backend Mock Activo
+                 </div>
+              )}
 
               {/* DB Connection Info */}
               <div className="bg-slate-800 rounded-lg p-4 font-mono text-xs space-y-3 border border-slate-700 shadow-inner">
@@ -331,9 +337,9 @@ const App: React.FC = () => {
 
             <span className="text-slate-300">|</span>
             
-            <span className={`${dbStatus === 'error' ? 'text-amber-600' : 'text-slate-800'} flex items-center gap-2 text-sm`}>
-              {dbStatus === 'error' && <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>}
-              {dbStatus === 'error' ? 'Modo Offline' : 'Editor SQL'}
+            <span className="text-slate-800 flex items-center gap-2 text-sm">
+              <span className={`w-1.5 h-1.5 rounded-full ${dbStatus === 'connected' ? 'bg-green-500' : 'bg-amber-500'}`}></span>
+              {dbStatus === 'connected' ? 'Editor SQL (Simulación)' : 'Editor SQL'}
             </span>
           </div>
 
@@ -350,7 +356,7 @@ const App: React.FC = () => {
                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                  </svg>
                )}
-               Ejecutar Query
+               Ejecutar Query (Simulado)
              </button>
           </div>
         </header>
@@ -417,11 +423,9 @@ const App: React.FC = () => {
               <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <h4 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Resultados</h4>
-                  {dbStatus === 'error' && (
-                    <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200 font-medium">
-                      SIMULADO
-                    </span>
-                  )}
+                  <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200 font-medium">
+                      DATOS SIMULADOS
+                  </span>
                 </div>
                 <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100 font-mono">
                   4 rows • 0.12s
@@ -450,57 +454,4 @@ const App: React.FC = () => {
                           ${(1200.50 + (idx * 350)).toFixed(2)}
                         </td>
                         <td className="px-6 py-3">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            idx % 2 === 0 
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
-                              : 'bg-amber-50 text-amber-700 border-amber-100'
-                          }`}>
-                            {idx % 2 === 0 ? 'PAID' : 'PENDING'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Input Area */}
-          <div className="p-4 bg-white border-t border-slate-200">
-            <form onSubmit={handleSend} className="relative max-w-5xl mx-auto">
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder="Describe los datos que necesitas (ej: 'Ventas totales agrupadas por cliente de este mes')..."
-                disabled={isGenerating}
-                className="w-full bg-slate-50 hover:bg-white focus:bg-white text-slate-900 placeholder-slate-400 border border-slate-200 hover:border-slate-300 rounded-xl py-4 pl-5 pr-14 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm transition-all"
-              />
-              <button
-                type="submit"
-                disabled={!inputText.trim() || isGenerating}
-                className="absolute right-2 top-2 bottom-2 aspect-square bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-300 shadow-sm"
-              >
-                {isGenerating ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                  </svg>
-                )}
-              </button>
-            </form>
-            <div className="text-center mt-2">
-              <p className="text-[10px] text-slate-400">
-                {dbStatus === 'error' ? '⚠ Conexión DB fallida. Modo offline.' : 'Conexión DB establecida.'}
-              </p>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-};
-
-export default App;
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded
