@@ -1,0 +1,5 @@
+{
+  "name": "Botón Hola Mundo",
+  "description": "Una aplicación simple e interactiva con un botón central que cambia de color dinámicamente al ser presionado.",
+  "requestFramePermissions": []
+}
