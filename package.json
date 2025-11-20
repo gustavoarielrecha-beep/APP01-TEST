@@ -14,7 +14,8 @@
     "vite": "^7.2.4",
     "path": "^0.12.7",
     "@vitejs/plugin-react": "^5.1.1",
-    "@google/genai": "latest"
+    "@google/genai": "latest",
+    "fs": "^0.0.1-security"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
