@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 
@@ -7,7 +8,7 @@ const DB_CONFIG = {
   port: 5432,
   database: 'oneglobe',
   user: 'og_mcp',
-  password: 'og_mcp',
+  password: 'og_mcp', // Not used in frontend anymore, handled by backend
   table: 'invoice_raw'
 };
 
@@ -28,6 +29,7 @@ Response Rules:
 1. ONLY generate the SQL query.
 2. Provide a brief explanation of what the query does.
 3. Always output in JSON format.
+4. Do not include markdown code blocks (like \`\`\`json) in the response, just the raw JSON object.
 `;
 
 // --- Schema Definition for Gemini ---
@@ -75,8 +77,14 @@ const App: React.FC = () => {
   ]);
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Execution State
   const [isExecuting, setIsExecuting] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [queryResults, setQueryResults] = useState<any[]>([]);
+  const [queryFields, setQueryFields] = useState<string[]>([]);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [queryTime, setQueryTime] = useState<number>(0);
 
   // Database Connection State
   const [dbStatus, setDbStatus] = useState<ConnectionStatus>('init');
@@ -92,7 +100,6 @@ const App: React.FC = () => {
       setAiStatus('connecting');
       setAiErrorDetail(null);
       try {
-        // Usando explícitamente GEMINI_API_KEY como solicitado
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         chatSessionRef.current = ai.chats.create({
           model: selectedModel,
@@ -112,21 +119,31 @@ const App: React.FC = () => {
     initAI();
   }, [selectedModel]);
 
-  // Simulate DB Connection on Mount
+  // Connect to Backend (Proxy to DB)
   useEffect(() => {
     connectToDatabase();
   }, []);
 
-  const connectToDatabase = () => {
+  const connectToDatabase = async () => {
     setDbStatus('connecting');
     setDbError(null);
 
-    // Simulate a connection attempt
-    setTimeout(() => {
-      // SOLUCIÓN: Para fines de demostración en Frontend, simulamos una conexión exitosa.
-      // NOTA TÉCNICA: En producción, esto requeriría un Backend (API Node/Python) intermediario.
-      setDbStatus('connected');
-    }, 1500);
+    try {
+      // Call our local backend health check
+      const response = await fetch('/api/health');
+      const data = await response.json();
+
+      if (response.ok && data.status === 'connected') {
+        setDbStatus('connected');
+      } else {
+        setDbStatus('error');
+        setDbError(data.message || data.detail || 'Error connecting to backend service.');
+      }
+    } catch (err: any) {
+      console.error("DB Connection Check Error", err);
+      setDbStatus('error');
+      setDbError('No se pudo contactar con el servidor backend (Port 3001). Asegúrate de haber iniciado "node server.js".');
+    }
   };
 
   // Auto scroll
@@ -143,10 +160,10 @@ const App: React.FC = () => {
     setInputText('');
     setIsGenerating(true);
     setShowResults(false);
-    setAiErrorDetail(null); // Clear transient AI errors
+    setAiErrorDetail(null);
     
     if (aiStatus === 'error') {
-        setAiStatus('connected'); // Retry state visually if user tries again
+        setAiStatus('connected'); 
     }
 
     try {
@@ -177,14 +194,40 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Mock Execution Function ---
-  const executeQuery = () => {
+  const executeQuery = async () => {
     setIsExecuting(true);
-    // Simulate network delay
-    setTimeout(() => {
-      setShowResults(true);
-      setIsExecuting(false);
-    }, 1000);
+    setQueryError(null);
+    setQueryResults([]);
+    setQueryFields([]);
+    setShowResults(true);
+    
+    const startTime = performance.now();
+
+    const lastModelMessage = [...messages].reverse().find(m => m.role === 'model');
+    const currentSQL = typeof lastModelMessage?.content === 'object' ? lastModelMessage.content.sqlQuery : '';
+
+    try {
+        const response = await fetch('/api/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sql: currentSQL })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Error ejecutando la consulta');
+        }
+
+        setQueryResults(data.rows || []);
+        setQueryFields(data.fields || []);
+        setQueryTime(performance.now() - startTime);
+
+    } catch (err: any) {
+        setQueryError(err.message);
+    } finally {
+        setIsExecuting(false);
+    }
   };
 
   const lastModelMessage = [...messages].reverse().find(m => m.role === 'model');
@@ -254,16 +297,10 @@ const App: React.FC = () => {
               <div className={`flex items-center gap-3 p-3 rounded-lg border ${dbStatus === 'error' ? 'bg-red-900/10 border-red-900/30' : 'bg-slate-800 border-slate-700'}`}>
                 <div className={`w-2.5 h-2.5 rounded-full ${getDbStatusColor()}`}></div>
                 <span className={`text-sm font-medium ${dbStatus === 'error' ? 'text-red-400' : 'text-white'}`}>
-                  {dbStatus === 'connecting' ? 'Conectando...' : dbStatus === 'connected' ? 'Online (Simulado)' : 'Error de Conexión'}
+                  {dbStatus === 'connecting' ? 'Conectando...' : dbStatus === 'connected' ? 'Online' : 'Error de Conexión'}
                 </span>
               </div>
               
-              {dbStatus === 'connected' && (
-                 <div className="px-2 py-1 bg-amber-900/30 border border-amber-900/50 rounded text-[10px] text-amber-400 text-center">
-                    ⓘ Backend Mock Activo
-                 </div>
-              )}
-
               {/* DB Connection Info */}
               <div className="bg-slate-800 rounded-lg p-4 font-mono text-xs space-y-3 border border-slate-700 shadow-inner">
                 <div className="flex justify-between items-center border-b border-slate-700/50 pb-2">
@@ -338,8 +375,8 @@ const App: React.FC = () => {
             <span className="text-slate-300">|</span>
             
             <span className="text-slate-800 flex items-center gap-2 text-sm">
-              <span className={`w-1.5 h-1.5 rounded-full ${dbStatus === 'connected' ? 'bg-green-500' : 'bg-amber-500'}`}></span>
-              {dbStatus === 'connected' ? 'Editor SQL (Simulación)' : 'Editor SQL'}
+              <span className={`w-1.5 h-1.5 rounded-full ${dbStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'}`}></span>
+              {dbStatus === 'connected' ? 'Editor SQL (Conectado)' : 'Editor SQL (Desconectado)'}
             </span>
           </div>
 
@@ -347,7 +384,7 @@ const App: React.FC = () => {
              <button 
                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-medium rounded-lg shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                onClick={executeQuery}
-               disabled={isExecuting || !currentSQL || currentSQL.startsWith('--')}
+               disabled={isExecuting || !currentSQL || currentSQL.startsWith('--') || dbStatus !== 'connected'}
              >
                {isExecuting ? (
                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -356,7 +393,7 @@ const App: React.FC = () => {
                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                  </svg>
                )}
-               Ejecutar Query (Simulado)
+               Ejecutar Query
              </button>
           </div>
         </header>
@@ -417,41 +454,93 @@ const App: React.FC = () => {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Query Results Panel (Conditional) */}
+          {/* Query Results Panel (Real Data) */}
           {showResults && (
             <div className="h-72 border-t border-slate-200 bg-white flex flex-col animate-in slide-in-from-bottom-10 duration-300 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
               <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <h4 className="text-xs font-bold uppercase text-slate-500 tracking-wider">Resultados</h4>
-                  <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200 font-medium">
-                      DATOS SIMULADOS
-                  </span>
+                  {queryError ? (
+                     <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded border border-red-200 font-medium">ERROR</span>
+                  ) : (
+                     <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded border border-green-200 font-medium">EXITO</span>
+                  )}
                 </div>
-                <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100 font-mono">
-                  4 rows • 0.12s
+                <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-mono">
+                  {queryResults.length} rows • {queryTime.toFixed(2)}ms
                 </span>
               </div>
+              
               <div className="overflow-auto flex-1 p-0">
-                <table className="w-full text-sm text-left border-collapse">
-                  <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm">
-                    <tr>
-                      <th className="px-6 py-3 font-medium border-b text-xs uppercase tracking-wider">ID</th>
-                      <th className="px-6 py-3 font-medium border-b text-xs uppercase tracking-wider">Customer</th>
-                      <th className="px-6 py-3 font-medium border-b text-xs uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 font-medium border-b text-xs uppercase tracking-wider text-right">Amount</th>
-                      <th className="px-6 py-3 font-medium border-b text-xs uppercase tracking-wider">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {[101, 102, 103, 104].map((id, idx) => (
-                      <tr key={id} className="hover:bg-blue-50/30 transition-colors">
-                        <td className="px-6 py-3 font-mono text-slate-500 text-xs">#{id}</td>
-                        <td className="px-6 py-3 text-slate-700 font-medium">
-                          {['Acme Corp', 'Globex Inc', 'Soylent Corp', 'Initech'][idx]}
-                        </td>
-                        <td className="px-6 py-3 text-slate-500">2024-02-{10 + idx}</td>
-                        <td className="px-6 py-3 font-mono text-slate-700 text-right">
-                          ${(1200.50 + (idx * 350)).toFixed(2)}
-                        </td>
-                        <td className="px-6 py-3">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded
+                {queryError ? (
+                    <div className="p-6 text-red-500 font-mono text-sm">
+                        {queryError}
+                    </div>
+                ) : queryResults.length > 0 ? (
+                    <table className="w-full text-sm text-left border-collapse">
+                    <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm">
+                        <tr>
+                        {queryFields.map((field) => (
+                            <th key={field} className="px-6 py-3 font-medium border-b text-xs uppercase tracking-wider whitespace-nowrap">
+                                {field}
+                            </th>
+                        ))}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {queryResults.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
+                            {queryFields.map((field) => (
+                                <td key={`${idx}-${field}`} className="px-6 py-3 text-slate-700 whitespace-nowrap">
+                                    {row[field] !== null ? String(row[field]) : <span className="text-slate-300 italic">null</span>}
+                                </td>
+                            ))}
+                        </tr>
+                        ))}
+                    </tbody>
+                    </table>
+                ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400 text-sm">
+                        <p>La consulta no devolvió resultados.</p>
+                    </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Input Area */}
+          <div className="p-6 bg-white border-t border-slate-200 z-20">
+            <form onSubmit={handleSend} className="relative max-w-4xl mx-auto">
+              <input
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder={isGenerating ? "Generando consulta..." : "¿Qué datos necesitas consultar hoy?"}
+                disabled={isGenerating}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-base rounded-xl py-4 pl-6 pr-14 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm transition-all placeholder:text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed"
+              />
+              <button
+                type="submit"
+                disabled={!inputText.trim() || isGenerating}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 disabled:bg-slate-300"
+              >
+                {isGenerating ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                    <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+                  </svg>
+                )}
+              </button>
+            </form>
+            <p className="text-center text-xs text-slate-400 mt-3">
+              Gemini 3.0 Pro puede cometer errores. Verifica las consultas SQL antes de ejecutarlas.
+            </p>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default App;

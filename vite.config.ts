@@ -1,3 +1,4 @@
+
 import path from 'path';
 import fs from 'fs';
 import { defineConfig, loadEnv } from 'vite';
@@ -8,13 +9,10 @@ export default defineConfig(({ mode }) => {
     
     let geminiApiKey = env.GEMINI_API_KEY;
 
-    // Lógica para Docker Secrets:
-    // Si la variable existe y parece una ruta a un secreto (comienza con /run/secrets/),
-    // intentamos leer el contenido del archivo.
+    // Lógica para Docker Secrets
     if (geminiApiKey && geminiApiKey.startsWith('/run/secrets/')) {
         try {
             if (fs.existsSync(geminiApiKey)) {
-                // Leemos el archivo y eliminamos espacios en blanco (newlines)
                 geminiApiKey = fs.readFileSync(geminiApiKey, 'utf-8').trim();
                 console.log('✅ API Key cargada exitosamente desde Docker Secret');
             } else {
@@ -29,12 +27,18 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
-        // ESTA LÍNEA PERMITE CUALQUIER HOST (Incluyendo el de Docker)
         allowedHosts: true,
+        // PROXY: Redirige llamadas /api al backend Express en puerto 3001
+        proxy: {
+          '/api': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+            secure: false,
+          }
+        }
       },
       plugins: [react()],
       define: {
-        // Inyectamos el valor LEÍDO del archivo, no la ruta
         'process.env.API_KEY': JSON.stringify(geminiApiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(geminiApiKey)
       },
