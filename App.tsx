@@ -92,7 +92,8 @@ const App: React.FC = () => {
       setAiStatus('connecting');
       setAiErrorDetail(null);
       try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        // Usando explícitamente GEMINI_API_KEY como solicitado
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         chatSessionRef.current = ai.chats.create({
           model: selectedModel,
           config: {
