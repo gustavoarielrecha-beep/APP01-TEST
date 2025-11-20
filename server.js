@@ -14,10 +14,8 @@ const pool = new Pool({
   database: 'oneglobe',
   user: 'og_mcp',
   password: 'og_mcp',
-  ssl: {
-    rejectUnauthorized: false // Necesario para algunas conexiones remotas sin certificados validados
-  },
-  connectionTimeoutMillis: 5000 // 5 segundos timeout
+  // SSL ELIMINADO: El servidor no soporta conexiones SSL
+  connectionTimeoutMillis: 5000
 });
 
 app.use(cors());
@@ -48,10 +46,10 @@ app.post('/api/query', async (req, res) => {
     return res.status(400).json({ error: 'SQL query is required' });
   }
 
-  // SEGURIDAD BÁSICA: Prevenir comandos destructivos simples
+  // SEGURIDAD BÁSICA: Prevenir comandos destructivos
   const upperSql = sql.toUpperCase();
   if (upperSql.includes('DROP ') || upperSql.includes('DELETE ') || upperSql.includes('TRUNCATE ') || upperSql.includes('UPDATE ') || upperSql.includes('INSERT ')) {
-     return res.status(403).json({ error: 'READ-ONLY MODE: Solo se permiten consultas SELECT por seguridad.' });
+     return res.status(403).json({ error: 'MODO SOLO LECTURA: Por seguridad solo se permiten consultas SELECT.' });
   }
 
   let client;
